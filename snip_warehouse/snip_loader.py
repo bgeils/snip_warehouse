@@ -38,7 +38,9 @@ def printProgressBar (iteration, total, prefix = '', suffix = '', decimals = 1, 
 '''
 This class includes functions to download, parse and load NIH SNP files.
 
-Each file downloaded corresponds to a chromosome ()
+Each file downloaded corresponds to a chromosome (25 total). Once downloaded
+the parsing mechanism will upload a specified fields to the postgres database. 
+In my case this was a GCP managed postgres server. 
 '''
 class SnipLoader:
     def __init__(self, db_conn_string):
