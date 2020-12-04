@@ -11,7 +11,7 @@ from sqlalchemy.orm import sessionmaker
 
 Base = declarative_base()
 metadata = Base.metadata
-engine = create_engine(os.environ["SNIP_DB_URL"])
+engine = create_engine(os.environ["SNIP_DB_CONN_STRING"])
 metadata.bind = engine
 smaker = sessionmaker(bind=engine)
 
@@ -92,13 +92,14 @@ class User(Base):
 
 
 def init_db(database_name):
-    os.system(f"echo 'DROP DATABASE {database_name};"
-              f"CREATE DATABASE {database_name};'"
-              " | psql -U SeanH postgres")
+    # below is commented out since these commands didn't work with the GCP server I deployed
+    # os.system(f"echo 'DROP DATABASE {database_name};"
+    #           f"CREATE DATABASE {database_name};'"
+    #           " | psql -U SeanH postgres")
     metadata.create_all()
     session = smaker()
     session.add(
-        User(fname="Sean", lname="Harrington", email="seanharr11@gmail.com"))
+        User(fname="Brendon", lname="Geils", email="brendonjgeils@gmail.com"))
 
     session.commit()
 

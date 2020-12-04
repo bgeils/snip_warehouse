@@ -3,6 +3,7 @@ env/
 *.json
 *.pyc
 *.gz
+*.bz2
 *.tar*
 __pycache__/
 *.txt

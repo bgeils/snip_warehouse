@@ -1,7 +1,7 @@
 import asyncpg
 import asyncio
 import ftplib
-import gzip
+import bz2       
 from multiprocessing import cpu_count, Pool
 import time
 import threading
@@ -14,10 +14,35 @@ from .types import (
     RefSnpAlleleFreqStudy,
     RefSnpAlleleClinDisease)
 
+# Print iterations progress
+def printProgressBar (iteration, total, prefix = '', suffix = '', decimals = 1, length = 100, fill = '█', printEnd = "\r"):
+    """
+    Call in a loop to create terminal progress bar
+    @params:
+        iteration   - Required  : current iteration (Int)
+        total       - Required  : total iterations (Int)
+        prefix      - Optional  : prefix string (Str)
+        suffix      - Optional  : suffix string (Str)
+        decimals    - Optional  : positive number of decimals in percent complete (Int)
+        length      - Optional  : character length of bar (Int)
+        fill        - Optional  : bar fill character (Str)
+        printEnd    - Optional  : end character (e.g. "\r", "\r\n") (Str)
+    """
+    percent = ("{0:." + str(decimals) + "f}").format(100 * (iteration / float(total)))
+    filledLength = int(length * iteration // total)
+    bar = fill * filledLength + '-' * (length - filledLength)
+    print(f'\r{prefix} |{bar}| {percent}% {suffix}', end = printEnd)
+    # Print New Line on Complete
+    if iteration == total: 
+        print()
+'''
+This class includes functions to download, parse and load NIH SNP files.
 
+Each file downloaded corresponds to a chromosome ()
+'''
 class SnipLoader:
-    def __init__(self, database_name):  # , db_conn_string):
-        self.database_name = database_name
+    def __init__(self, db_conn_string):
+        self.db_conn_string = db_conn_string
         self.file_blocksize = 1024 * 1024
 
     def download_dbsnp_file(self, dbsnp_filename, chromosome):
@@ -27,7 +52,9 @@ class SnipLoader:
             ftp = ftplib.FTP("ftp.ncbi.nlm.nih.gov")
             ftp.login()
             ftp.cwd("snp/.redesign/latest_release/JSON")
-            size_gb = round(ftp.size(dbsnp_filename) / (1024**3), 2)
+            file_size = ftp.size(dbsnp_filename)
+            size_gb = round(file_size / (1024**3), 2)
+            size_mb = int(file_size / (1024**2))
             print(f"Filesize: {size_gb} GB")
             sock = None
             while not sock:  # Try to open the socket conn w/ server
@@ -45,11 +72,11 @@ class SnipLoader:
                     transferred += len(byte_chunk)
                     transferred_mb = round(transferred / 1024 / 1024, 2)
                     if blocks % 1000 == 0:
-                        print(f"Transferred {transferred_mb}MB / "
-                              f"{size_gb * 1024}MB")
+                        printProgressBar(int(transferred_mb), size_mb, prefix = 'Progress:', suffix = 'Complete', length = 50, decimals = 3)
                     fp.write(byte_chunk)
                 sock.close()
                 fp.close()
+                print('\n')
             t = threading.Thread(target=download)
             t.start()
             while t.is_alive():
@@ -62,17 +89,16 @@ class SnipLoader:
         print(f"Found '{num_processes}' CPUs")
         loop = asyncio.get_event_loop()
         with Pool(num_processes) as pool:
-            with gzip.open(dbsnp_filename) as gzip_fp:
+            with bz2.open(dbsnp_filename) as bz2_fp:
                 print("Mapping...")
                 copy_from_data_iter = pool.imap_unordered(
                     self._generate_parsed_data,
-                    gzip_fp,
+                    bz2_fp,
                     1024)
                 loop.run_until_complete(self._load(copy_from_data_iter))
 
     async def _load(self, parsed_data_iter):
-        conn = await asyncpg.connect(database=self.database_name, user="SeanH")
-        await conn.execute("SET session_replication_role to 'replica'")
+        conn = await asyncpg.connect(self.db_conn_string)
         table_names = [table_name for table_name in RefSnpCopyFromData._fields]
         row_buff_dict = {table_name: [] for table_name in table_names}
         buff_size = 0
@@ -93,10 +119,13 @@ class SnipLoader:
             records = row_buff_dict[table_name]
             if not records:
                 continue
-            await conn.copy_records_to_table(
-                table_name,
-                records=records,
-                columns=records[0]._fields)
+            try: 
+                await conn.copy_records_to_table(
+                    table_name,
+                    records=records,
+                    columns=records[0]._fields)
+            except asyncpg.exceptions.UniqueViolationError as e:
+                continue
 
     def _generate_parsed_data(self, raw_line) -> RefSnpCopyFromData:
         rsnp_json = json.loads(raw_line)

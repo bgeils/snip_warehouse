@@ -3,17 +3,11 @@ import csv
 
 
 class SnipUploader:
-    def __init__(self, username, password, host):
-        self.username = username
-        self.password = password
-        self.host = host
+    def __init__(self, db_conn_string):
+        self.db_conn_string = db_conn_string
 
     async def connect(self):
-        self.pool = await asyncpg.create_pool(
-            user=self.username,
-            password=self.password,
-            host=self.host,
-            database='snip')
+        self.pool = await asyncpg.create_pool(self.db_conn_string)
         self.conn = await self.pool.acquire()
 
     async def upload(self, iterable_buff, user_id):
@@ -22,11 +16,7 @@ class SnipUploader:
              `user_id`: int
              -  the id of the user uploading SNP data
         """
-        # await self.conn.execute(
-        #    "SET session_replication_role = replica;")
         await self._upload(iterable_buff, user_id)
-        # await self.conn.execute(
-        #    "SET session_replication_role = DEFAULT;")
 
     async def _upload(self, buff, user_id=1):
         cr = csv.reader(filter(lambda ln: not ln.startswith("#"), buff),
